@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LED起電力測定アプリ</title>
+</head>
+<body>
+  <h1>LED Voltage Meter</h1>
+  <button id="startBtn">測定開始</button>
+  <div id="v-display" style="font-size: 3rem; font-weight: bold;">0.000 V</div>
+
+  <script>
+    const CALIBRATION_FACTOR = 1.0; // 較正用定数
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Float32Array(bufferLength);
+        
+        function render() {
+          analyser.getFloatTimeDomainData(dataArray);
+          let peak = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            if (Math.abs(dataArray[i]) > peak) {
+              peak = Math.abs(dataArray[i]);
+            }
+          }
+          const voltage = peak * CALIBRATION_FACTOR;
+          document.getElementById('v-display').innerText = `${voltage.toFixed(3)} V`;
+          requestAnimationFrame(render);
+        }
+        render();
+      } catch (err) {
+        alert('マイクのアクセス許可が必要です: ' + err);
+      }
+    });
+  </script>
+</body>
+</html>
