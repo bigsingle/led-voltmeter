@@ -3,28 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>V/F変換 較正対応・電圧測定アプリ</title>
+    <title>IC555 V/F 測定アプリ</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f4f4f9; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
         button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 1rem; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 15px; }
-        .value { font-size: 2rem; font-weight: bold; color: #28a745; margin: 10px 0; }
-        .sub { font-size: 0.9rem; color: #555; margin-top: 10px; }
-        input { width: 80px; padding: 5px; text-align: center; }
-        .settings { background: #e9ecef; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 0.85rem; text-align: left; }
+        .value { font-size: 2.2rem; font-weight: bold; color: #28a745; margin: 15px 0; }
+        .sub { font-size: 0.9rem; color: #666; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>V/F 測定 & 較正アプリ</h1>
+        <h1>IC555 V/Fモニター</h1>
         <button id="startBtn">測定開始（マイク許可）</button>
-        <div class="value" id="voltVal">0.000 V</div>
-        <div class="sub" id="freqVal">周波数: 0 Hz</div>
-
-        <div class="settings">
-            <strong>[較正係数設定]</strong><br>
-            V = (Hz - <input type="number" id="offset" value="0">) / <input type="number" id="slope" value="1000">
-        </div>
+        <div class="value" id="freqVal">0 Hz</div>
+        <div class="sub" id="voltVal">推定電圧: 0.000 V</div>
     </div>
 
     <script>
@@ -32,8 +25,6 @@
         const startBtn = document.getElementById('startBtn');
         const freqVal = document.getElementById('freqVal');
         const voltVal = document.getElementById('voltVal');
-        const slopeInput = document.getElementById('slope');
-        const offsetInput = document.getElementById('offset');
 
         startBtn.addEventListener('click', async () => {
             try {
@@ -74,17 +65,12 @@
                 let dominantFreq = (maxIdx * nyquist) / bufferLength;
 
                 if (maxVal > -45 && dominantFreq > 10) {
-                    freqVal.innerText = "周波数: " + dominantFreq.toFixed(1) + " Hz";
-                    
-                    // 較正パラメータの適用 (V = (Hz - offset) / slope)
-                    let slope = parseFloat(slopeInput.value) || 1000;
-                    let offset = parseFloat(offsetInput.value) || 0;
-                    let calculatedVolt = (dominantFreq - offset) / slope;
-                    
-                    voltVal.innerText = calculatedVolt.toFixed(3) + " V";
+                    freqVal.innerText = dominantFreq.toFixed(1) + " Hz";
+                    let estimatedVoltage = dominantFreq * 0.001; // 較正係数
+                    voltVal.innerText = "推定電圧: " + estimatedVoltage.toFixed(3) + " V";
                 } else {
-                    freqVal.innerText = "周波数: 0 Hz";
-                    voltVal.innerText = "0.000 V";
+                    freqVal.innerText = "0 Hz";
+                    voltVal.innerText = "推定電圧: 0.000 V";
                 }
             }
             update();
