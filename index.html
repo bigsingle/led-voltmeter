@@ -3,33 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>スマホ電圧計・光電効果モニター</title>
+    <title>V/F変換 較正対応・電圧測定アプリ</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f4f4f9; }
-        h1 { font-size: 1.5rem; color: #333; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
         button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 1rem; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 15px; }
-        button:active { background: #0056b3; }
-        .value { font-size: 2.5rem; font-weight: bold; color: #28a745; margin: 15px 0; }
-        canvas { width: 100%; height: 150px; background: #222; border-radius: 4px; margin-top: 15px; }
+        .value { font-size: 2rem; font-weight: bold; color: #28a745; margin: 10px 0; }
+        .sub { font-size: 0.9rem; color: #555; margin-top: 10px; }
+        input { width: 80px; padding: 5px; text-align: center; }
+        .settings { background: #e9ecef; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 0.85rem; text-align: left; }
     </style>
 </head>
 <body>
-
     <div class="card">
-        <h1>光電効果・電圧モニター</h1>
-        <p>マイク入力から起電力を測定します</p>
+        <h1>V/F 測定 & 較正アプリ</h1>
         <button id="startBtn">測定開始（マイク許可）</button>
-        <div class="value" id="voltageVal">0.00 V</div>
-        <canvas id="scopeCanvas"></canvas>
+        <div class="value" id="voltVal">0.000 V</div>
+        <div class="sub" id="freqVal">周波数: 0 Hz</div>
+
+        <div class="settings">
+            <strong>[較正係数設定]</strong><br>
+            V = (Hz - <input type="number" id="offset" value="0">) / <input type="number" id="slope" value="1000">
+        </div>
     </div>
 
     <script>
-        let audioCtx, analyser, microphone, javascriptNode;
+        let audioCtx, analyser, microphone;
         const startBtn = document.getElementById('startBtn');
-        const voltageVal = document.getElementById('voltageVal');
-        const canvas = document.getElementById('scopeCanvas');
-        const canvasCtx = canvas.getContext('2d');
+        const freqVal = document.getElementById('freqVal');
+        const voltVal = document.getElementById('voltVal');
+        const slopeInput = document.getElementById('slope');
+        const offsetInput = document.getElementById('offset');
 
         startBtn.addEventListener('click', async () => {
             try {
@@ -38,56 +42,52 @@
                 
                 microphone = audioCtx.createMediaStreamSource(stream);
                 analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 256;
+                analyser.fftSize = 2048;
                 
                 microphone.connect(analyser);
                 startBtn.style.display = 'none';
                 
-                visualize();
+                detectFrequency();
             } catch (err) {
-                alert('マイクへのアクセスが拒否されたか、エラーが発生しました: ' + err);
+                alert('マイクエラー: ' + err);
             }
         });
 
-        function visualize() {
+        function detectFrequency() {
             const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
+            const dataArray = new Float32Array(bufferLength);
             
-            function draw() {
-                requestAnimationFrame(draw);
-                analyser.getByteTimeDomainData(dataArray);
+            function update() {
+                requestAnimationFrame(update);
+                analyser.getFloatFrequencyData(dataArray);
 
-                canvasCtx.fillStyle = '#222';
-                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-                canvasCtx.lineWidth = 2;
-                canvasCtx.strokeStyle = '#00ffcc';
-                canvasCtx.beginPath();
-
-                const sliceWidth = canvas.width / bufferLength;
-                let x = 0;
-                let sumSquare = 0;
-
+                let maxIdx = 0;
+                let maxVal = -Infinity;
                 for (let i = 0; i < bufferLength; i++) {
-                    let v = dataArray[i] / 128.0 - 1.0; // -1 to 1
-                    sumSquare += v * v;
-                    let y = (v * 0.5 + 0.5) * canvas.height;
-
-                    if (i === 0) canvasCtx.moveTo(x, y);
-                    else canvasCtx.lineTo(x, y);
-
-                    x += sliceWidth;
+                    if (dataArray[i] > maxVal) {
+                        maxVal = dataArray[i];
+                        maxIdx = i;
+                    }
                 }
 
-                canvasCtx.lineTo(canvas.width, canvas.height / 2);
-                canvasCtx.stroke();
+                let nyquist = audioCtx.sampleRate / 2;
+                let dominantFreq = (maxIdx * nyquist) / bufferLength;
 
-                // 簡易的なRMSから電圧換算表示（校正係数はドングル仕様に合わせて調整）
-                let rms = Math.sqrt(sumSquare / bufferLength);
-                let estimatedVoltage = rms * 3.3; // 係数は実測に合わせて調整用
-                voltageVal.innerText = estimatedVoltage.toFixed(3) + " V (Rel)";
+                if (maxVal > -45 && dominantFreq > 10) {
+                    freqVal.innerText = "周波数: " + dominantFreq.toFixed(1) + " Hz";
+                    
+                    // 較正パラメータの適用 (V = (Hz - offset) / slope)
+                    let slope = parseFloat(slopeInput.value) || 1000;
+                    let offset = parseFloat(offsetInput.value) || 0;
+                    let calculatedVolt = (dominantFreq - offset) / slope;
+                    
+                    voltVal.innerText = calculatedVolt.toFixed(3) + " V";
+                } else {
+                    freqVal.innerText = "周波数: 0 Hz";
+                    voltVal.innerText = "0.000 V";
+                }
             }
-            draw();
+            update();
         }
     </script>
 </body>
